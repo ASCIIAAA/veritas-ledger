@@ -1,0 +1,289 @@
+import React, { useState, useCallback } from 'react';
+import { ethers } from 'ethers';
+import './App.css';
+
+// --- SVG Icons (as React Components) ---
+const UploadIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="upload-icon"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+);
+
+const LockIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+);
+
+const CubeIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
+);
+
+const LayersIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+);
+
+
+// --- Main App Component ---
+function App() {
+  const [file, setFile] = useState(null);
+  const [fileName, setFileName] = useState('');
+  const [docHash, setDocHash] = useState('');
+  const [clauses, setClauses] = useState([]);
+  const [error, setError] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [isNotarizing, setIsNotarizing] = useState(false);
+  const [txHash, setTxHash] = useState('');
+
+  const resetState = () => {
+    setFile(null);
+    setFileName('');
+    setDocHash('');
+    setClauses([]);
+    setError('');
+    setIsProcessing(false);
+    setIsNotarizing(false);
+    setTxHash('');
+  };
+
+  const handleFileChange = (selectedFile) => {
+    if (selectedFile && selectedFile.type === 'application/pdf') {
+      setError('');
+      setFile(selectedFile);
+      setFileName(selectedFile.name);
+      processDocument(selectedFile);
+    } else {
+      setError('Please upload a valid PDF file.');
+      setFile(null);
+      setFileName('');
+    }
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      handleFileChange(files[0]);
+    }
+  };
+
+  const processDocument = async (doc) => {
+    setIsProcessing(true);
+    
+    // 1. Calculate SHA-256 Hash
+    const buffer = await doc.arrayBuffer();
+    const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const hashHex = '0x' + hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    setDocHash(hashHex);
+
+    // 2. Simulate Clause Analysis (replace with actual AI/parser later)
+    setTimeout(() => {
+      setClauses([
+        { name: 'Payment Clause', status: 'detected' },
+        { name: 'Termination Clause', status: 'detected' },
+        { name: 'Confidentiality (NDA)', status: 'detected' },
+        { name: 'Governing Law Clause', status: 'missing' },
+      ]);
+      setIsProcessing(false);
+    }, 2000); // Simulate network/processing delay
+  };
+
+  const handleNotarize = async () => {
+      if (!window.ethereum) {
+          setError("MetaMask is not installed. Please install it to continue.");
+          return;
+      }
+
+      setIsNotarizing(true);
+      setError('');
+
+      try {
+          // 1. Connect to MetaMask and get user's account
+          const provider = new ethers.BrowserProvider(window.ethereum);
+          await provider.send("eth_requestAccounts", []);
+          const signer = await provider.getSigner();
+
+          // 2. Switch to testnet
+          const chainId = '0x4268'; // holesky testnet chain ID
+          try {
+              await window.ethereum.request({
+                  method: 'wallet_switchEthereumChain',
+                  params: [{ chainId }],
+              });
+          } catch (switchError) {
+              // This error code indicates that the chain has not been added to MetaMask.
+              if (switchError.code === 4902) {
+                  setError("Holesky testnet is not added to your MetaMask. Please add it manually.");
+              } else {
+                setError("Failed to switch to Sepolia network.");
+              }
+              setIsNotarizing(false);
+              return;
+          }
+
+          // This is a placeholder. Replace with your actual deployed contract address and ABI.
+          const contractAddress = "0x...YourContractAddressHere"; 
+          const contractABI = [
+              // A simple function to store a hash
+              "function storeHash(bytes32 documentHash)"
+          ];
+
+          // Create a contract instance
+          // NOTE: This will fail until you provide a real contract address.
+          // For this MVP, we will simulate the transaction instead of sending a real one.
+          
+          // const contract = new ethers.Contract(contractAddress, contractABI, signer);
+          // const tx = await contract.storeHash(docHash);
+          // await tx.wait();
+          // setTxHash(tx.hash);
+
+          // --- SIMULATION LOGIC ---
+          console.log("Simulating transaction for hash:", docHash);
+          setTimeout(() => {
+            const simulatedTxHash = `0x${[...Array(64)].map(() => Math.floor(Math.random() * 16).toString(16)).join('')}`;
+            setTxHash(simulatedTxHash);
+            setIsNotarizing(false);
+          }, 3000);
+          // --- END SIMULATION ---
+          
+      } catch (err) {
+          console.error(err);
+          setError(err.reason || "An error occurred during notarization.");
+          setIsNotarizing(false);
+      }
+  };
+
+
+  return (
+    <div className="container">
+      <header className="header">
+        <div className="logo">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" className="logo-icon"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5-10-5-10 5z"></path></svg>
+          <h1>Veritas Ledger</h1>
+        </div>
+        <nav className="nav">
+          <a href="#">Features</a>
+          <a href="#">Security</a>
+          <a href="#">Analytics</a>
+          <a href="#">About</a>
+        </nav>
+        <div className="actions">
+          <button className="btn btn-secondary">Sign In</button>
+          <button className="btn btn-primary">Get Started</button>
+        </div>
+      </header>
+
+      <main className="main-content">
+        {!docHash && !txHash && (
+          <>
+            <div className="hero">
+              <h2>Secure Document Verification with Blockchain Technology</h2>
+              <p>Upload your PDF contracts for instant AI analysis and permanent blockchain verification. Get cryptographic proof of authenticity with Veritas Ledger.</p>
+            </div>
+            
+            <div 
+              className={`dropzone ${isProcessing ? 'processing' : ''}`}
+              onDragOver={handleDragOver}
+              onDrop={handleDrop}
+            >
+              <input 
+                type="file" 
+                id="file-upload" 
+                accept=".pdf" 
+                onChange={(e) => handleFileChange(e.target.files[0])}
+                style={{ display: 'none' }} 
+              />
+              {isProcessing ? (
+                <div className="spinner"></div>
+              ) : (
+                <>
+                  <UploadIcon />
+                  <h3>Drop your PDF contract here</h3>
+                  <p>Upload your document for instant analysis and blockchain verification</p>
+                  <label htmlFor="file-upload" className="btn btn-primary">
+                    Choose File
+                  </label>
+                  <span className="file-info">{fileName || "PDF contracts only"}</span>
+                  {error && <p className="error-message">{error}</p>}
+                </>
+              )}
+            </div>
+            
+            <section className="features">
+              <div className="feature-card">
+                <div className="feature-icon"><LockIcon /></div>
+                <h3>Instant Analysis</h3>
+                <p>AI-powered clause detection and SHA-256 fingerprinting in seconds.</p>
+              </div>
+              <div className="feature-card">
+                <div className="feature-icon"><CubeIcon /></div>
+                <h3>Blockchain Proof</h3>
+                <p>Immutable timestamping on Ethereum Sepolia testnet.</p>
+              </div>
+              <div className="feature-card">
+                <div className="feature-icon"><LayersIcon /></div>
+                <h3>Permanent Record</h3>
+                <p>Shareable Etherscan links for document authenticity proof.</p>
+              </div>
+            </section>
+          </>
+        )}
+
+        {docHash && !txHash && (
+           <div className="analysis-container">
+            <h2>Analysis Complete</h2>
+            <div className="analysis-result">
+              <div className="hash-section">
+                <h4>Document Hash (SHA-256)</h4>
+                <p className="hash-value" title={docHash}>{docHash}</p>
+                <button className="copy-btn" onClick={() => navigator.clipboard.writeText(docHash)}>Copy Hash</button>
+              </div>
+              <div className="clauses-section">
+                <h4>Clause Detection Summary</h4>
+                <ul>
+                  {clauses.map((clause, index) => (
+                    <li key={index} className={clause.status}>
+                      {clause.status === 'detected' ? '✅' : '⚠️'} {clause.name}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+            <div className="notarize-action">
+              <h3>Create a Tamper-Proof Record</h3>
+              <p>Store the document's unique hash on the Sepolia blockchain forever. This action will require a MetaMask transaction.</p>
+              <button className="btn btn-primary btn-large" onClick={handleNotarize} disabled={isNotarizing}>
+                {isNotarizing ? <><div className="spinner-small"></div> Notarizing...</> : 'Notarize on Blockchain'}
+              </button>
+              {error && <p className="error-message">{error}</p>}
+            </div>
+          </div>
+        )}
+
+        {txHash && (
+          <div className="confirmation-container">
+            <h2>Notarization Successful!</h2>
+            <p>Your document's unique hash has been permanently recorded on the blockchain.</p>
+            <div className="tx-info">
+              <h4>Transaction Hash</h4>
+              <a 
+                href={`https://sepolia.etherscan.io/tx/${txHash}`} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="tx-link"
+              >
+                {txHash}
+              </a>
+              <p className="info-text">You can view and share this transaction on Etherscan as permanent proof.</p>
+            </div>
+            <button className="btn btn-secondary" onClick={resetState}>Verify Another Document</button>
+          </div>
+        )}
+
+      </main>
+    </div>
+  );
+}
+
+export default App;
