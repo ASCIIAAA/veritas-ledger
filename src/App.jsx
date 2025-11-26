@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState } from 'react';
 import { ethers } from 'ethers';
 import './App.css';
 
@@ -67,28 +67,58 @@ function App() {
     }
   };
 
+  // --- PHASE 2 INTEGRATION: AI ANALYSIS ---
   const processDocument = async (doc) => {
     setIsProcessing(true);
     
-    // 1. Calculate SHA-256 Hash
-    const buffer = await doc.arrayBuffer();
-    const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const hashHex = '0x' + hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-    setDocHash(hashHex);
+    const formData = new FormData();
+    formData.append('pdf', doc);
 
-    // 2. Simulate Clause Analysis (replace with actual AI/parser later)
-    setTimeout(() => {
-      setClauses([
-        { name: 'Payment Clause', status: 'detected' },
-        { name: 'Termination Clause', status: 'detected' },
-        { name: 'Confidentiality (NDA)', status: 'detected' },
-        { name: 'Governing Law Clause', status: 'missing' },
-      ]);
-      setIsProcessing(false);
-    }, 2000); // Simulate network/processing delay
+    try {
+        // IMPORTANT: Replace this URL with your actual backend server URL (e.g., http://localhost:3001/analyze)
+        // If you haven't built the backend yet, keep this fetch commented out and use the simulation code below.
+        
+        /* const response = await fetch('http://localhost:3001/analyze', {
+            method: 'POST',
+            body: formData,
+        });
+        
+        if (!response.ok) throw new Error('Server analysis failed');
+        
+        const data = await response.json();
+        
+        setDocHash(data.docHash); 
+        // Assuming backend returns: { docHash: "...", risks: ["risk1", "risk2"] }
+        setClauses(data.risks.map(risk => ({ name: risk, status: 'warning' })));
+        */
+
+        // --- SIMULATION (Delete this block when backend is ready) ---
+        // We still calculate the hash locally so the "Verification" feels real even without the backend
+        const buffer = await doc.arrayBuffer();
+        const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const hashHex = '0x' + hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        setDocHash(hashHex);
+
+        setTimeout(() => {
+          setClauses([
+            { name: 'Payment Terms (Standard)', status: 'detected' },
+            { name: 'Confidentiality Clause', status: 'detected' },
+            { name: 'Unilateral Termination (Risk)', status: 'warning' }, // Example of a "shady" clause
+            { name: 'Indemnification (Missing)', status: 'missing' },
+          ]);
+          setIsProcessing(false);
+        }, 2000); 
+        // --- END SIMULATION ---
+
+    } catch (err) {
+        console.error(err);
+        setError('Failed to analyze document. Is the backend server running?');
+        setIsProcessing(false);
+    }
   };
 
+  // --- PHASE 3 INTEGRATION: BLOCKCHAIN ---
   const handleNotarize = async () => {
       if (!window.ethereum) {
           setError("MetaMask is not installed. Please install it to continue.");
@@ -104,44 +134,51 @@ function App() {
           await provider.send("eth_requestAccounts", []);
           const signer = await provider.getSigner();
 
-          // 2. Switch to testnet
-          const chainId = '0x4268'; // holesky testnet chain ID
+          // 2. Switch to Testnet (e.g., Sepolia)
+          // IMPORTANT: Check which network you deployed to.
+          // Sepolia Chain ID: 11155111 (Hex: 0xaa36a7)
+          const chainId = '0xaa36a7'; 
+          
           try {
               await window.ethereum.request({
                   method: 'wallet_switchEthereumChain',
                   params: [{ chainId }],
               });
           } catch (switchError) {
-              // This error code indicates that the chain has not been added to MetaMask.
+              // This error code 4902 indicates that the chain has not been added to MetaMask.
               if (switchError.code === 4902) {
-                  setError("Holesky testnet is not added to your MetaMask. Please add it manually.");
+                  setError("Sepolia testnet is not added to your MetaMask. Please add it manually.");
               } else {
-                setError("Failed to switch to Sepolia network.");
+                  console.warn("Could not switch to Sepolia. Attempting to proceed on current network...");
+                  // We continue in case the user is on a different testnet like Holesky
               }
-              setIsNotarizing(false);
-              return;
           }
 
-          // This is a placeholder. Replace with your actual deployed contract address and ABI.
-          const contractAddress = "0x...YourContractAddressHere"; 
+          // IMPORTANT: Replace with your REAL deployed contract address
+          const contractAddress = "0xYourDeployedContractAddressHere"; 
+          
           const contractABI = [
-              // A simple function to store a hash
-              "function storeHash(bytes32 documentHash)"
+              // IMPORTANT: This function signature must match your Solidity code exactly.
+              // Example: function storeHash(string memory docHash) public
+              "function storeHash(string memory docHash) public"
           ];
 
-          // Create a contract instance
-          // NOTE: This will fail until you provide a real contract address.
-          // For this MVP, we will simulate the transaction instead of sending a real one.
+          // 3. Interact with the Contract
+          // Uncomment lines below when you have a real address
+          /*
+          const contract = new ethers.Contract(contractAddress, contractABI, signer);
+          const tx = await contract.storeHash(docHash);
+          console.log("Transaction sent:", tx.hash);
           
-          // const contract = new ethers.Contract(contractAddress, contractABI, signer);
-          // const tx = await contract.storeHash(docHash);
-          // await tx.wait();
-          // setTxHash(tx.hash);
+          await tx.wait(); // Wait for the transaction to be mined
+          setTxHash(tx.hash);
+          */
 
-          // --- SIMULATION LOGIC ---
+          // --- SIMULATION LOGIC (Delete this when real contract is connected) ---
           console.log("Simulating transaction for hash:", docHash);
           setTimeout(() => {
-            const simulatedTxHash = `0x${[...Array(64)].map(() => Math.floor(Math.random() * 16).toString(16)).join('')}`;
+            // Generate a fake transaction hash starting with 0x
+            const simulatedTxHash = `0x${Array.from({length: 64}, () => Math.floor(Math.random() * 16).toString(16)).join('')}`;
             setTxHash(simulatedTxHash);
             setIsNotarizing(false);
           }, 3000);
@@ -149,7 +186,8 @@ function App() {
           
       } catch (err) {
           console.error(err);
-          setError(err.reason || "An error occurred during notarization.");
+          // Ethers.js errors often have a 'reason' or 'message' property
+          setError(err.reason || err.message || "An error occurred during notarization.");
           setIsNotarizing(false);
       }
   };
@@ -244,7 +282,7 @@ function App() {
                 <ul>
                   {clauses.map((clause, index) => (
                     <li key={index} className={clause.status}>
-                      {clause.status === 'detected' ? '✅' : '⚠️'} {clause.name}
+                      {clause.status === 'detected' ? '✅' : clause.status === 'warning' ? '⚠️' : '❌'} {clause.name}
                     </li>
                   ))}
                 </ul>

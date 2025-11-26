@@ -31,5 +31,18 @@
   },
   "overrides": {
     "vite": "npm:rolldown-vite@7.1.12"
-  }
+  },
+  "description": "A blockchain based project. MVP here for now. More coming soon",
+  "main": "eslint.config.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ASCIIAAA/veritas-ledger.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/ASCIIAAA/veritas-ledger/issues"
+  },
+  "homepage": "https://github.com/ASCIIAAA/veritas-ledger#readme"
 }
