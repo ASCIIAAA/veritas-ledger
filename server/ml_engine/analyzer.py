@@ -1,103 +1,82 @@
 import sys
 import json
 import spacy
+import re
 
-# Load NLP model (standard English)
+# Load NLP model
 try:
     nlp = spacy.load("en_core_web_sm")
 except OSError:
-    print(json.dumps({"error": "Model not found. Run: python -m spacy download en_core_web_sm"}))
+    print(json.dumps({"error": "Model not found."}))
     sys.exit(1)
 
+# --- 1. IMPROVED REGEX PATTERNS ---
+# Updated to catch "5TH FEBRUARY 2024" and "15TH JANUARY 2024"
+REGEX_PATTERNS = {
+    "dates": [
+        # Catch: 5th February 2024, 15TH JANUARY 2024
+        r'\b\d{1,2}(?:st|nd|rd|th)?\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{4}\b',
+        # Catch: January 5, 2024
+        r'\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{4}\b',
+        # Catch: 05/02/2024 or 2024-02-05
+        r'\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b'
+    ],
+    "money": [
+        r'[\$€£₹]\s?[\d,]+(\.\d{2})?',
+        r'\b(?:Rs\.|INR)\s?[\d,]+',
+        r'\b(?:unlimited|full)\s+financial\s+authority\b' # Catch generic money authority
+    ]
+}
+
+# --- 2. REFINED KNOWLEDGE BASE ---
+# Using shorter phrases to avoid mismatches due to PDF formatting
 DOC_KX = {
-    "Memorandum of Understanding": {
-        "keywords": [
-            "mutual understanding", "partnership", "collaboration", "joint initiative", 
-            "objective", "scope of work", "responsibilities of parties", "obligations", 
-            "cost-sharing", "financial contribution", "non-binding"
-        ],
-        "red_flags": [
-            "this mou is legally binding", 
-            "irrevocably agree", 
-            "unconditional obligations", 
-            "penalties shall be imposed", 
-            "exclusive rights granted to", 
-            "failure to comply will result in legal action"
-        ]
-    },
     "Board Resolution": {
         "keywords": [
-            "resolved that", "board of directors", "meeting of the board", "chairperson", 
-            "quorum", "agenda item", "authorization to sign", "issue of shares", 
-            "appointment of auditors", "company seal", "companies act"
+            "board resolution", "resolved that", "board of directors", "meeting of the board", 
+            "quorum", "agenda item", "certified true copy"
         ],
         "red_flags": [
-            "approved without quorum", 
-            "resolution passed without meeting", 
-            "backdated approval", 
-            "director absent but recorded present", 
-            "authority delegated without oversight"
+            "not achieved",             # Catches "Quorum: Not achieved"
+            "without quorum",           # Catches "meeting... without quorum"
+            "backdated",                # Catches "hereby backdated"
+            "recorded as passed",       # Administrative convenience
+            "delegate his authority",   # Unchecked delegation
+            "only one signature",
+            "unlimited financial authority"
         ]
+    },
+    "Memorandum of Understanding": {
+        "keywords": ["memorandum of understanding", "mou", "mutual understanding", "collaboration"],
+        "red_flags": ["legally binding", "irrevocably agree", "penalties shall be imposed"]
     },
     "Annual Report": {
-        "keywords": [
-            "revenue", "gross profit", "ebitda", "net income", "shareholder equity", 
-            "qualified opinion", "material misstatement", "auditor’s report", 
-            "going concern", "risk management", "csr initiatives"
-        ],
-        "red_flags": [
-            "going concern is uncertain", 
-            "material weaknesses found", 
-            "significant fraud detected", 
-            "unable to obtain sufficient audit evidence", 
-            "pending investigation", 
-            "restatement of financial statements"
-        ]
+        "keywords": ["annual report", "financial statements", "auditor", "balance sheet"],
+        "red_flags": ["material misstatement", "going concern is uncertain", "fraud detected"]
     },
     "Employment Contract": {
-        "keywords": [
-            "probation period", "working hours", "salary", "benefits", "non-compete", 
-            "non-solicitation", "code of conduct", "leave policy", "disciplinary action", 
-            "designation"
-        ],
-        "red_flags": [
-            "employee waives all legal rights", 
-            "termination without notice", 
-            "non-compete for more than 2 years", 
-            "company is not responsible for workplace injuries", 
-            "salary may be withheld", 
-            "pay penalty for resignation"
-        ]
+        "keywords": ["employment agreement", "probation period", "remuneration", "non-compete"],
+        "red_flags": ["waives all legal rights", "without notice", "penalty for resignation"]
     },
     "Non-Disclosure Agreement": {
-        "keywords": [
-            "confidential information", "proprietary data", "trade secrets", 
-            "recipient shall not disclose", "public domain", "return or destroy", 
-            "injunction relief", "survival clause"
-        ],
-        "red_flags": [
-            "nda lasts forever", 
-            "recipient assumes all liability", 
-            "no exceptions to confidentiality", 
-            "unlimited penalties", 
-            "recipient grants ownership", 
-            "disclosure allowed to affiliates without consent"
-        ]
+        "keywords": ["non-disclosure", "confidential information", "recipient shall not"],
+        "red_flags": ["lasts forever", "no exceptions", "assumes all liability"]
     }
 }
 
-UNIVERSAL_FLAGS = [
-    "irrevocable", "perpetual obligation", "without limitation", 
-    "waives all rights", "unlimited liability", "records destroyed", 
-    "unable to provide documentation", "self-dealing", 
-    "beneficiary is related to director", "fraudulent activity", 
-    "pending legal proceedings"
-]
+def extract_regex_data(text):
+    data = {}
+    # Combine patterns for each type
+    for label, patterns in REGEX_PATTERNS.items():
+        matches = []
+        for pat in patterns:
+            # Case insensitive search for better matching
+            found = re.findall(pat, text, re.IGNORECASE)
+            matches.extend(found)
+        data[label] = list(set(matches))
+    return data
 
 def detect_doc_type(text_lower):
-    """
-    Classifies the document based on which category has the most keyword matches.
-    """
     scores = {dtype: 0 for dtype in DOC_KX}
     
     for dtype, data in DOC_KX.items():
@@ -105,18 +84,17 @@ def detect_doc_type(text_lower):
             if keyword in text_lower:
                 scores[dtype] += 1
     
-    # Get the category with the highest score
     best_match = max(scores, key=scores.get)
-    
-    # If no keywords match at all, return Unknown
-    if scores[best_match] == 0:
-        return "Unknown Document"
-    
-    return best_match
+    return best_match if scores[best_match] > 0 else "Unknown Document"
 
 def analyze_contract(text):
-    doc = nlp(text)
-    text_lower = text.lower()
+    # --- CRITICAL: NORMALIZE TEXT ---
+    # Removes newlines inside sentences that break phrase matching
+    # "BOARD \n RESOLUTION" becomes "BOARD RESOLUTION"
+    clean_text = " ".join(text.split())
+    text_lower = clean_text.lower()
+    
+    doc = nlp(clean_text)
     
     risks = []
     score = 100
@@ -124,59 +102,47 @@ def analyze_contract(text):
     # 1. Classification
     detected_type = detect_doc_type(text_lower)
     
-    # 2. Universal Risk Scan
-    for flag in UNIVERSAL_FLAGS:
-        if flag in text_lower:
-            risks.append({
-                "name": "Universal High Risk",
-                "status": "critical",
-                "explanation": f"CRITICAL: Found highly dangerous phrase: '{flag}'."
-            })
-            score -= 20
-
-    # 3. Context-Specific Risk Scan
+    # 2. Risk Scan
     if detected_type in DOC_KX:
-        # Check specific red flags for this document type
-        specific_flags = DOC_KX[detected_type]["red_flags"]
-        for flag in specific_flags:
+        # Check specific red flags
+        for flag in DOC_KX[detected_type]["red_flags"]:
             if flag in text_lower:
                 risks.append({
-                    "name": f"{detected_type} Risk",
+                    "name": f"Critical Risk ({detected_type})",
                     "status": "warning",
-                    "explanation": f"Flagged potentially dangerous clause: '{flag}'."
+                    "explanation": f"Detected risky clause: '{flag}'"
                 })
-                score -= 15
-    else:
-        # If unknown, we can't do specific checks, so we deduct a small confidence score
-        score -= 10
-        risks.append({
-            "name": "Unknown Document Type",
-            "status": "warning",
-            "explanation": "Could not automatically classify document type. Standard analysis applied."
-        })
-
-    # 4. Entity Extraction (to make it look cool/useful)
-    # Extracts Organizations (ORG) and Money (MONEY) mentioned
-    entities = [ent.text for ent in doc.ents if ent.label_ in ["ORG", "MONEY"]]
+                score -= 25 # Heavy penalty for specific red flags
+    
+    # 3. Regex Extraction
+    regex_data = extract_regex_data(clean_text)
+    
+    # 4. Entity Extraction (People/Orgs)
+    entities = [ent.text for ent in doc.ents if ent.label_ in ["ORG", "PERSON"]]
 
     return {
         "score": max(0, score),
         "type": detected_type,
         "risks": risks,
-        "entities": list(set(entities))
+        "entities": list(set(entities)),
+        "key_details": regex_data
     }
 
 if __name__ == "__main__":
     try:
-        # Read input from Node.js
+        # 1. Handle potential encoding issues from Node.js
+        sys.stdin.reconfigure(encoding='utf-8')
         input_text = sys.argv[1]
+        
+        # 2. Run Analysis
         result = analyze_contract(input_text)
         print(json.dumps(result))
+        
     except Exception as e:
-        # Fallback error handling
         print(json.dumps({
             "score": 0, 
             "type": "Error", 
             "risks": [{"name": "System Error", "status": "critical", "explanation": str(e)}],
-            "entities": []
+            "entities": [],
+            "key_details": {}
         }))

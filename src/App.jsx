@@ -2,28 +2,14 @@ import React, { useState } from 'react';
 import { ethers } from 'ethers';
 import './App.css';
 
-// --- SVG Icons (as React Components) ---
-const UploadIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="upload-icon"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-);
+// --- ICONS ---
+const UploadIcon = () => (<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>);
 
-const LockIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
-);
-
-const CubeIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
-);
-
-const LayersIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
-);
-
-// --- BLOCKCHAIN CONSTANTS ---
-// Your specific contract address on Sepolia
+// --- BLOCKCHAIN CONFIG ---
+// ⚠️ IMPORTANT: Replace this with the address of your NEW 'DocumentLedger' contract
 const CONTRACT_ADDRESS = "0x62f6bBB2e20707dce3bA7078A7d1ce3126Fb7Fb7"; 
 
-const CONTRACT_ABI=[[
+const CONTRACT_ABI = [
 	{
 		"inputs": [
 			{
@@ -168,73 +154,37 @@ const CONTRACT_ABI=[[
 		"stateMutability": "view",
 		"type": "function"
 	}
-]];
+];
 
-
-// --- Main App Component ---
 function App() {
+  // --- UI STATE ---
+  const [activeTab, setActiveTab] = useState('create'); // 'create', 'update', 'verify'
+  
+  // --- DATA STATE ---
   const [file, setFile] = useState(null);
-  const [fileName, setFileName] = useState('');
   
-  // Analysis State
+  // Analysis Results
   const [docHash, setDocHash] = useState('');
-  const [clauses, setClauses] = useState([]);
-  const [docType, setDocType] = useState('');     // NEW: For Document Type
-  const [score, setScore] = useState(0);          // NEW: For Risk Score
-  const [entities, setEntities] = useState([]);   // NEW: For Extracted Entities
+  const [docType, setDocType] = useState('');
+  const [score, setScore] = useState(0);
+  const [risks, setRisks] = useState([]);
+  const [keyDetails, setKeyDetails] = useState({});
+
+  // Blockchain Inputs
+  const [originalDocId, setOriginalDocId] = useState('');
+  const [latestHash, setLatestHash] = useState('');
   
-  // Status State
-  const [error, setError] = useState('');
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [isNotarizing, setIsNotarizing] = useState(false);
-  const [txHash, setTxHash] = useState('');
+  // Status
+  const [status, setStatus] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
-  const resetState = () => {
-    setFile(null);
-    setFileName('');
-    setDocHash('');
-    setClauses([]);
-    setDocType('');
-    setScore(0);
-    setEntities([]);
-    setError('');
-    setIsProcessing(false);
-    setIsNotarizing(false);
-    setTxHash('');
-  };
-
-  const handleFileChange = (selectedFile) => {
-    if (selectedFile && selectedFile.type === 'application/pdf') {
-      setError('');
-      setFile(selectedFile);
-      setFileName(selectedFile.name);
-      processDocument(selectedFile);
-    } else {
-      setError('Please upload a valid PDF file.');
-      setFile(null);
-      setFileName('');
-    }
-  };
-
-  const handleDragOver = (e) => {
-    e.preventDefault();
-  };
-
-  const handleDrop = (e) => {
-    e.preventDefault();
-    const files = e.dataTransfer.files;
-    if (files && files.length > 0) {
-      handleFileChange(files[0]);
-    }
-  };
-
-  // --- PHASE 2 INTEGRATION: AI ANALYSIS ---
-  const processDocument = async (doc) => {
-    setIsProcessing(true);
-    setError('');
+  // --- 1. AI ANALYSIS ENGINE ---
+  const processDocument = async (selectedFile) => {
+    setIsLoading(true);
+    setStatus('Analyzing document...');
     
     const formData = new FormData();
-    formData.append('pdf', doc);
+    formData.append('pdf', selectedFile);
 
     try {
        const response = await fetch('http://localhost:3001/analyze', {
@@ -243,261 +193,201 @@ function App() {
        });
        
        if (!response.ok) throw new Error('Server analysis failed');
-       
        const data = await response.json();
        
-       // Update state with data from Python Analyzer
        setDocHash(data.docHash);
-       setClauses(data.risks);
-       setDocType(data.type);       // Save Document Type
-       setScore(data.score);        // Save Score
-       setEntities(data.entities);  // Save Entities
+       setRisks(data.risks);
+       setDocType(data.type);
+       setScore(data.score);
+       setKeyDetails(data.key_details || {});
        
-       setIsProcessing(false);
-
+       setStatus('Analysis Complete.');
     } catch (err) {
         console.error(err);
-        setError('Failed to analyze document. Is the backend server running?');
-        setIsProcessing(false);
+        setStatus('Error: Backend server not reachable.');
+    } finally {
+        setIsLoading(false);
     }
   };
 
-  // --- PHASE 3 INTEGRATION: BLOCKCHAIN ---
-  const handleNotarize = async () => {
-      if (!window.ethereum) {
-          setError("MetaMask is not installed. Please install it to continue.");
-          return;
-      }
-
-      setIsNotarizing(true);
-      setError('');
-
-      try {
-          // 1. Connect to MetaMask
-          const provider = new ethers.BrowserProvider(window.ethereum);
-          await provider.send("eth_requestAccounts", []);
-          const signer = await provider.getSigner();
-
-          // 2. Switch to Sepolia Testnet
-          const chainId = '0xaa36a7'; // Sepolia Chain ID
-          
-          try {
-              await window.ethereum.request({
-                  method: 'wallet_switchEthereumChain',
-                  params: [{ chainId }],
-              });
-          } catch (switchError) {
-              if (switchError.code === 4902) {
-                  setError("Sepolia testnet is not added to your MetaMask. Please add it manually.");
-              } else {
-                  console.warn("Could not switch to Sepolia. Attempting to proceed...");
-              }
-          }
-
-          // 3. Interact with the Contract
-          // Use the constant defined at the top
-          const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
-          
-          const tx = await contract.storeHash(docHash);
-          console.log("Transaction sent:", tx.hash);
-          
-          await tx.wait(); // Wait for the transaction to be mined
-          setTxHash(tx.hash);
-          
-      } catch (err) {
-          console.error(err);
-          // Ethers.js errors often have a 'reason' or 'message' property
-          const errorMessage = err.reason || err.message || "An error occurred during notarization.";
-          
-          if (errorMessage.includes("already notarized")) {
-             setError("This document has already been verified on the blockchain!");
-          } else {
-             setError(errorMessage);
-          }
-          setIsNotarizing(false);
-      }
+  const handleFileChange = (e) => {
+    if (e.target.files[0]) {
+        setFile(e.target.files[0]);
+        processDocument(e.target.files[0]);
+    }
   };
 
+  // --- 2. BLOCKCHAIN ACTIONS ---
+  const getContract = async () => {
+      if (!window.ethereum) throw new Error("MetaMask not found");
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      return new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
+  };
+
+  const handleCreate = async () => {
+      try {
+          setIsLoading(true);
+          const contract = await getContract();
+          // Use the Hash as the ID for the first version
+          const tx = await contract.createDocument(docHash, docHash);
+          setStatus("Waiting for confirmation...");
+          await tx.wait();
+          setStatus(`Success! Document ID: ${docHash}`);
+      } catch (err) {
+          console.error(err);
+          setStatus("Error: " + (err.reason || err.message));
+      } finally { setIsLoading(false); }
+  };
+
+  const handleUpdate = async () => {
+      if (!originalDocId) return setStatus("Please enter Original Document ID");
+      try {
+          setIsLoading(true);
+          const contract = await getContract();
+          const tx = await contract.updateDocument(originalDocId, docHash);
+          setStatus("Waiting for confirmation...");
+          await tx.wait();
+          setStatus("Success! New version linked on blockchain.");
+      } catch (err) {
+          console.error(err);
+          setStatus("Error: " + (err.reason || err.message));
+      } finally { setIsLoading(false); }
+  };
+
+  const handleVerify = async () => {
+      if (!originalDocId) return setStatus("Please enter Document ID");
+      try {
+          setIsLoading(true);
+          const contract = await getContract();
+          const result = await contract.getLatestHash(originalDocId);
+          setLatestHash(result);
+          setStatus("Blockchain query successful.");
+      } catch (err) {
+          console.error(err);
+          setStatus("Error: " + (err.reason || err.message));
+      } finally { setIsLoading(false); }
+  };
 
   return (
     <div className="container">
       <header className="header">
-        <div className="logo">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" className="logo-icon"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5-10-5-10 5z"></path></svg>
-          <h1>Veritas Ledger</h1>
-        </div>
-        <nav className="nav">
-          <a href="#">Features</a>
-          <a href="#">Security</a>
-          <a href="#">Analytics</a>
-          <a href="#">About</a>
-        </nav>
-        <div className="actions">
-          <button className="btn btn-secondary">Sign In</button>
-          <button className="btn btn-primary">Get Started</button>
+        <div className="logo"><h1>Veritas Ledger</h1></div>
+        <div className="nav">
+            <button onClick={() => {setActiveTab('create'); setStatus('')}} className={activeTab === 'create' ? 'active-tab' : ''}>New Document</button>
+            <button onClick={() => {setActiveTab('update'); setStatus('')}} className={activeTab === 'update' ? 'active-tab' : ''}>Update Version</button>
+            <button onClick={() => {setActiveTab('verify'); setStatus('')}} className={activeTab === 'verify' ? 'active-tab' : ''}>Verify Hash</button>
         </div>
       </header>
 
-      <main className="main-content">
-        {!docHash && !txHash && (
-          <>
-            <div className="hero">
-              <h2>Secure Document Verification with Blockchain Technology</h2>
-              <p>Upload your PDF contracts for instant AI analysis and permanent blockchain verification. Get cryptographic proof of authenticity with Veritas Ledger.</p>
-            </div>
-            
-            <div 
-              className={`dropzone ${isProcessing ? 'processing' : ''}`}
-              onDragOver={handleDragOver}
-              onDrop={handleDrop}
-            >
-              <input 
-                type="file" 
-                id="file-upload" 
-                accept=".pdf" 
-                onChange={(e) => handleFileChange(e.target.files[0])}
-                style={{ display: 'none' }} 
-              />
-              {isProcessing ? (
-                <div className="spinner"></div>
-              ) : (
-                <>
-                  <UploadIcon />
-                  <h3>Drop your PDF contract here</h3>
-                  <p>Upload your document for instant analysis and blockchain verification</p>
-                  <label htmlFor="file-upload" className="btn btn-primary">
-                    Choose File
-                  </label>
-                  <span className="file-info">{fileName || "PDF contracts only"}</span>
-                  {error && <p className="error-message">{error}</p>}
-                </>
-              )}
-            </div>
-            
-            <section className="features">
-              <div className="feature-card">
-                <div className="feature-icon"><LockIcon /></div>
-                <h3>Instant Analysis</h3>
-                <p>AI-powered clause detection and SHA-256 fingerprinting in seconds.</p>
-              </div>
-              <div className="feature-card">
-                <div className="feature-icon"><CubeIcon /></div>
-                <h3>Blockchain Proof</h3>
-                <p>Immutable timestamping on Ethereum Sepolia testnet.</p>
-              </div>
-              <div className="feature-card">
-                <div className="feature-icon"><LayersIcon /></div>
-                <h3>Permanent Record</h3>
-                <p>Shareable Etherscan links for document authenticity proof.</p>
-              </div>
-            </section>
-          </>
-        )}
+      <main className={`main-content ${docHash ? 'content-top' : ''}`}>
+        <h2 style={{ marginBottom: "1rem", color: "var(--text-muted)", fontSize:"1.2rem" }}>
+    {activeTab === 'update' ? 'Upload New Version' : 'Upload Document'}
+</h2>
 
-        {docHash && !txHash && (
-           <div className="analysis-container">
-            {/* NEW: Analysis Header with Type and Score */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', borderBottom: '1px solid #333', paddingBottom: '1rem' }}>
-                <div>
-                    <h2>Analysis Complete</h2>
-                    <span style={{ 
-                        background: '#3700b3', 
-                        padding: '0.25rem 0.75rem', 
-                        borderRadius: '4px', 
-                        fontSize: '0.9rem',
-                        marginTop: '0.5rem',
-                        display: 'inline-block'
-                    }}>
-                        {docType || "Unknown Document"}
-                    </span>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: '2.5rem', fontWeight: 'bold', color: score > 70 ? '#4caf50' : score > 40 ? '#ffc107' : '#cf6679' }}>
-                        {score}/100
-                    </div>
-                    <span style={{ color: '#b3b3b3', fontSize: '0.9rem' }}>Safety Score</span>
-                </div>
-            </div>
-
-            <div className="analysis-result">
-              <div className="hash-section">
-                <h4>Document Hash (SHA-256)</h4>
-                <p className="hash-value" title={docHash}>{docHash}</p>
-                <button className="copy-btn" onClick={() => navigator.clipboard.writeText(docHash)}>Copy Hash</button>
+        {/* --- UPLOAD SECTION (For Create & Update) --- */}
+        {(activeTab === 'create' || activeTab === 'update') && (
+            <div className={`upload-section ${docHash ? 'full' : ''}`}>
+                {activeTab === 'update' && (
+                    <input 
+                        type="text" 
+                        placeholder="Paste Original Document ID (Hash)" 
+                        className="input-field"
+                        value={originalDocId}
+                        onChange={(e) => setOriginalDocId(e.target.value)}
+                    />
+                )}
                 
-                {/* NEW: Entities Section */}
-                {entities.length > 0 && (
-                    <div style={{ marginTop: '2rem' }}>
-                        <h4>Key Entities Detected</h4>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-                            {entities.map((ent, i) => (
-                                <span key={i} style={{ 
-                                    background: '#1e1e1e', 
-                                    border: '1px solid #333', 
-                                    padding: '0.25rem 0.5rem', 
-                                    borderRadius: '4px',
-                                    fontSize: '0.85rem',
-                                    color: '#bb86fc'
-                                }}>
-                                    {ent}
-                                </span>
-                            ))}
+                <div className="dropzone">
+                    <UploadIcon />
+                    <p>Upload {activeTab === 'update' ? 'New Version' : 'PDF Document'}</p>
+                    <input type="file" onChange={handleFileChange} />
+                </div>
+
+                {/* RESULTS CARD */}
+                {docHash && (
+                    <div className="analysis-result">
+                        <h3>AI Analysis Report</h3>
+                        
+                        <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                            {/* We pass the score as a CSS variable for the chart */}
+                            <div className="score-badge" style={{ "--score": score }}>
+                                <span className="score-value">{score}</span>
+                            </div>
+                            <span style={{ color: '#b3b3b3', fontSize: '0.85rem', marginTop: '0.5rem' }}>
+                                Safety Score
+                            </span>
                         </div>
+
+                        {/* RISKS */}
+                        <div className="risks-container">
+                            <h4>⚠️ Detected Risks</h4>
+                            {risks.length > 0 ? (
+                                <ul className="risk-list">
+                                    {risks.map((risk, index) => (
+                                        <li key={index} className="risk-item">
+                                            <span style={{fontSize: '1.2rem', marginRight: '10px'}}>
+                                                {risk.status === 'critical' ? '❌' : '⚠️'}
+                                            </span>
+                                            <div>
+                                                <strong style={{color: '#fca5a5'}}>{risk.name}</strong>
+                                                <p style={{color: '#e2e8f0', fontSize: '0.9rem'}}>{risk.explanation}</p>
+                                            </div>
+                                        </li>
+                                    ))}
+                                </ul>
+                            ) : (
+                                <p className="safe-message">✅ No specific risks detected.</p>
+                            )}
+                        </div>
+
+                        {/* REGEX DETAILS */}
+                        {(keyDetails.dates?.length > 0 || keyDetails.money?.length > 0) && (
+                            <div className="key-details">
+                                <h4>📄 Extracted Details</h4>
+                                <ul>
+                                    {keyDetails.dates?.map(d => <li key={d}>📅 {d}</li>)}
+                                    {keyDetails.money?.map(m => <li key={m}>💰 {m}</li>)}
+                                </ul>
+                            </div>
+                        )}
+
+                        <div className="hash-display">
+                            <span style={{color: '#6b7280', fontSize: '0.8em'}}>New Hash:</span><br/>
+                            {docHash}
+                        </div>
+                        
+                        <button className="btn btn-primary" onClick={activeTab === 'create' ? handleCreate : handleUpdate} disabled={isLoading}>
+                            {isLoading ? "Processing..." : (activeTab === 'create' ? "Notarize on Blockchain" : "Update Blockchain Record")}
+                        </button>
                     </div>
                 )}
-              </div>
-
-              <div className="clauses-section">
-                <h4>Risk Assessment</h4>
-                <ul>
-                  {clauses.map((clause, index) => (
-                    <li key={index} className={clause.status} style={{ marginBottom: '1rem' }}>
-                      <div style={{ fontWeight: 'bold', marginBottom: '0.25rem' }}>
-                        {clause.status === 'detected' ? '✅' : clause.status === 'warning' ? '⚠️' : '❌'} {clause.name}
-                      </div>
-                      {clause.explanation && (
-                          <div style={{ fontSize: '0.85rem', color: '#b3b3b3', marginLeft: '1.5rem' }}>
-                              {clause.explanation}
-                          </div>
-                      )}
-                    </li>
-                  ))}
-                  {clauses.length === 0 && <li className="detected">No obvious risks detected.</li>}
-                </ul>
-              </div>
             </div>
-            
-            <div className="notarize-action">
-              <h3>Create a Tamper-Proof Record</h3>
-              <p>Store the document's unique hash on the Sepolia blockchain forever. This action will require a MetaMask transaction.</p>
-              <button className="btn btn-primary btn-large" onClick={handleNotarize} disabled={isNotarizing}>
-                {isNotarizing ? <><div className="spinner-small"></div> Notarizing...</> : 'Notarize on Blockchain'}
-              </button>
-              {error && <p className="error-message">{error}</p>}
-            </div>
-          </div>
         )}
 
-        {txHash && (
-          <div className="confirmation-container">
-            <h2>Notarization Successful!</h2>
-            <p>Your document's unique hash has been permanently recorded on the blockchain.</p>
-            <div className="tx-info">
-              <h4>Transaction Hash</h4>
-              <a 
-                href={`https://sepolia.etherscan.io/tx/${txHash}`} 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="tx-link"
-              >
-                {txHash}
-              </a>
-              <p className="info-text">You can view and share this transaction on Etherscan as permanent proof.</p>
+        {/* --- VERIFY SECTION --- */}
+        {activeTab === 'verify' && (
+            <div className="verify-section">
+                <h2>Check Latest Version</h2>
+                <input 
+                    type="text" 
+                    placeholder="Enter Document ID (Original Hash)" 
+                    className="input-field"
+                    value={originalDocId}
+                    onChange={(e) => setOriginalDocId(e.target.value)}
+                />
+                <button className="btn btn-secondary" onClick={handleVerify}>Get Latest Hash</button>
+                
+                {latestHash && (
+                    <div className="result-box">
+                        <h4>Blockchain Result</h4>
+                        <p>Latest Valid Hash: <br/><code>{latestHash}</code></p>
+                    </div>
+                )}
             </div>
-            <button className="btn btn-secondary" onClick={resetState}>Verify Another Document</button>
-          </div>
         )}
 
+        {status && <p className="status-msg">{status}</p>}
       </main>
     </div>
   );

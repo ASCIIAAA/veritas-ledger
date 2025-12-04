@@ -18,6 +18,11 @@ app.post('/analyze', upload.single('pdf'), async (req, res) => {
         const pdfData = await pdf(dataBuffer);
         const pdfText = pdfData.text;
         const crypto = require('crypto');
+
+        console.log("--- DEBUG: EXTRACTED TEXT ---");
+        console.log(pdfText.substring(0, 500)); // Print first 500 chars
+        console.log("-----------------------------");
+
         // 2. Call Python Script for NLP
         // We pass the pdfText as a command line argument
         const pythonProcess = spawn('python', [
