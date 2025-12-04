@@ -19,13 +19,171 @@ const LayersIcon = () => (
     <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
 );
 
+// --- BLOCKCHAIN CONSTANTS ---
+// Your specific contract address on Sepolia
+const CONTRACT_ADDRESS = "0x62f6bBB2e20707dce3bA7078A7d1ce3126Fb7Fb7"; 
+
+const CONTRACT_ABI=[[
+	{
+		"inputs": [
+			{
+				"internalType": "bytes32",
+				"name": "_documentId",
+				"type": "bytes32"
+			},
+			{
+				"internalType": "bytes32",
+				"name": "_documentHash",
+				"type": "bytes32"
+			}
+		],
+		"name": "createDocument",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "bytes32",
+				"name": "documentId",
+				"type": "bytes32"
+			},
+			{
+				"indexed": false,
+				"internalType": "bytes32",
+				"name": "documentHash",
+				"type": "bytes32"
+			},
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "creator",
+				"type": "address"
+			}
+		],
+		"name": "DocumentCreated",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "bytes32",
+				"name": "documentId",
+				"type": "bytes32"
+			},
+			{
+				"indexed": false,
+				"internalType": "bytes32",
+				"name": "newHash",
+				"type": "bytes32"
+			},
+			{
+				"indexed": false,
+				"internalType": "bytes32",
+				"name": "previousHash",
+				"type": "bytes32"
+			}
+		],
+		"name": "DocumentUpdated",
+		"type": "event"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "bytes32",
+				"name": "_documentId",
+				"type": "bytes32"
+			},
+			{
+				"internalType": "bytes32",
+				"name": "_newDocumentHash",
+				"type": "bytes32"
+			}
+		],
+		"name": "updateDocument",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "bytes32",
+				"name": "",
+				"type": "bytes32"
+			},
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"name": "documentHistory",
+		"outputs": [
+			{
+				"internalType": "bytes32",
+				"name": "documentHash",
+				"type": "bytes32"
+			},
+			{
+				"internalType": "bytes32",
+				"name": "previousHash",
+				"type": "bytes32"
+			},
+			{
+				"internalType": "uint256",
+				"name": "timestamp",
+				"type": "uint256"
+			},
+			{
+				"internalType": "address",
+				"name": "recordedBy",
+				"type": "address"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "bytes32",
+				"name": "_documentId",
+				"type": "bytes32"
+			}
+		],
+		"name": "getLatestHash",
+		"outputs": [
+			{
+				"internalType": "bytes32",
+				"name": "",
+				"type": "bytes32"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	}
+]];
+
 
 // --- Main App Component ---
 function App() {
   const [file, setFile] = useState(null);
   const [fileName, setFileName] = useState('');
+  
+  // Analysis State
   const [docHash, setDocHash] = useState('');
   const [clauses, setClauses] = useState([]);
+  const [docType, setDocType] = useState('');     // NEW: For Document Type
+  const [score, setScore] = useState(0);          // NEW: For Risk Score
+  const [entities, setEntities] = useState([]);   // NEW: For Extracted Entities
+  
+  // Status State
   const [error, setError] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [isNotarizing, setIsNotarizing] = useState(false);
@@ -36,6 +194,9 @@ function App() {
     setFileName('');
     setDocHash('');
     setClauses([]);
+    setDocType('');
+    setScore(0);
+    setEntities([]);
     setError('');
     setIsProcessing(false);
     setIsNotarizing(false);
@@ -70,46 +231,29 @@ function App() {
   // --- PHASE 2 INTEGRATION: AI ANALYSIS ---
   const processDocument = async (doc) => {
     setIsProcessing(true);
+    setError('');
     
     const formData = new FormData();
     formData.append('pdf', doc);
 
     try {
-        // IMPORTANT: Replace this URL with your actual backend server URL (e.g., http://localhost:3001/analyze)
-        // If you haven't built the backend yet, keep this fetch commented out and use the simulation code below.
-        
-        /* const response = await fetch('http://localhost:3001/analyze', {
-            method: 'POST',
-            body: formData,
-        });
-        
-        if (!response.ok) throw new Error('Server analysis failed');
-        
-        const data = await response.json();
-        
-        setDocHash(data.docHash); 
-        // Assuming backend returns: { docHash: "...", risks: ["risk1", "risk2"] }
-        setClauses(data.risks.map(risk => ({ name: risk, status: 'warning' })));
-        */
-
-        // --- SIMULATION (Delete this block when backend is ready) ---
-        // We still calculate the hash locally so the "Verification" feels real even without the backend
-        const buffer = await doc.arrayBuffer();
-        const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
-        const hashArray = Array.from(new Uint8Array(hashBuffer));
-        const hashHex = '0x' + hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-        setDocHash(hashHex);
-
-        setTimeout(() => {
-          setClauses([
-            { name: 'Payment Terms (Standard)', status: 'detected' },
-            { name: 'Confidentiality Clause', status: 'detected' },
-            { name: 'Unilateral Termination (Risk)', status: 'warning' }, // Example of a "shady" clause
-            { name: 'Indemnification (Missing)', status: 'missing' },
-          ]);
-          setIsProcessing(false);
-        }, 2000); 
-        // --- END SIMULATION ---
+       const response = await fetch('http://localhost:3001/analyze', {
+        method: 'POST',
+        body: formData,
+       });
+       
+       if (!response.ok) throw new Error('Server analysis failed');
+       
+       const data = await response.json();
+       
+       // Update state with data from Python Analyzer
+       setDocHash(data.docHash);
+       setClauses(data.risks);
+       setDocType(data.type);       // Save Document Type
+       setScore(data.score);        // Save Score
+       setEntities(data.entities);  // Save Entities
+       
+       setIsProcessing(false);
 
     } catch (err) {
         console.error(err);
@@ -129,15 +273,13 @@ function App() {
       setError('');
 
       try {
-          // 1. Connect to MetaMask and get user's account
+          // 1. Connect to MetaMask
           const provider = new ethers.BrowserProvider(window.ethereum);
           await provider.send("eth_requestAccounts", []);
           const signer = await provider.getSigner();
 
-          // 2. Switch to Testnet (e.g., Sepolia)
-          // IMPORTANT: Check which network you deployed to.
-          // Sepolia Chain ID: 11155111 (Hex: 0xaa36a7)
-          const chainId = '0xaa36a7'; 
+          // 2. Switch to Sepolia Testnet
+          const chainId = '0xaa36a7'; // Sepolia Chain ID
           
           try {
               await window.ethereum.request({
@@ -145,49 +287,33 @@ function App() {
                   params: [{ chainId }],
               });
           } catch (switchError) {
-              // This error code 4902 indicates that the chain has not been added to MetaMask.
               if (switchError.code === 4902) {
                   setError("Sepolia testnet is not added to your MetaMask. Please add it manually.");
               } else {
-                  console.warn("Could not switch to Sepolia. Attempting to proceed on current network...");
-                  // We continue in case the user is on a different testnet like Holesky
+                  console.warn("Could not switch to Sepolia. Attempting to proceed...");
               }
           }
 
-          // IMPORTANT: Replace with your REAL deployed contract address
-          const contractAddress = "0xYourDeployedContractAddressHere"; 
-          
-          const contractABI = [
-              // IMPORTANT: This function signature must match your Solidity code exactly.
-              // Example: function storeHash(string memory docHash) public
-              "function storeHash(string memory docHash) public"
-          ];
-
           // 3. Interact with the Contract
-          // Uncomment lines below when you have a real address
-          /*
-          const contract = new ethers.Contract(contractAddress, contractABI, signer);
+          // Use the constant defined at the top
+          const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
+          
           const tx = await contract.storeHash(docHash);
           console.log("Transaction sent:", tx.hash);
           
           await tx.wait(); // Wait for the transaction to be mined
           setTxHash(tx.hash);
-          */
-
-          // --- SIMULATION LOGIC (Delete this when real contract is connected) ---
-          console.log("Simulating transaction for hash:", docHash);
-          setTimeout(() => {
-            // Generate a fake transaction hash starting with 0x
-            const simulatedTxHash = `0x${Array.from({length: 64}, () => Math.floor(Math.random() * 16).toString(16)).join('')}`;
-            setTxHash(simulatedTxHash);
-            setIsNotarizing(false);
-          }, 3000);
-          // --- END SIMULATION ---
           
       } catch (err) {
           console.error(err);
           // Ethers.js errors often have a 'reason' or 'message' property
-          setError(err.reason || err.message || "An error occurred during notarization.");
+          const errorMessage = err.reason || err.message || "An error occurred during notarization.";
+          
+          if (errorMessage.includes("already notarized")) {
+             setError("This document has already been verified on the blockchain!");
+          } else {
+             setError(errorMessage);
+          }
           setIsNotarizing(false);
       }
   };
@@ -270,24 +396,77 @@ function App() {
 
         {docHash && !txHash && (
            <div className="analysis-container">
-            <h2>Analysis Complete</h2>
+            {/* NEW: Analysis Header with Type and Score */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', borderBottom: '1px solid #333', paddingBottom: '1rem' }}>
+                <div>
+                    <h2>Analysis Complete</h2>
+                    <span style={{ 
+                        background: '#3700b3', 
+                        padding: '0.25rem 0.75rem', 
+                        borderRadius: '4px', 
+                        fontSize: '0.9rem',
+                        marginTop: '0.5rem',
+                        display: 'inline-block'
+                    }}>
+                        {docType || "Unknown Document"}
+                    </span>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: '2.5rem', fontWeight: 'bold', color: score > 70 ? '#4caf50' : score > 40 ? '#ffc107' : '#cf6679' }}>
+                        {score}/100
+                    </div>
+                    <span style={{ color: '#b3b3b3', fontSize: '0.9rem' }}>Safety Score</span>
+                </div>
+            </div>
+
             <div className="analysis-result">
               <div className="hash-section">
                 <h4>Document Hash (SHA-256)</h4>
                 <p className="hash-value" title={docHash}>{docHash}</p>
                 <button className="copy-btn" onClick={() => navigator.clipboard.writeText(docHash)}>Copy Hash</button>
+                
+                {/* NEW: Entities Section */}
+                {entities.length > 0 && (
+                    <div style={{ marginTop: '2rem' }}>
+                        <h4>Key Entities Detected</h4>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                            {entities.map((ent, i) => (
+                                <span key={i} style={{ 
+                                    background: '#1e1e1e', 
+                                    border: '1px solid #333', 
+                                    padding: '0.25rem 0.5rem', 
+                                    borderRadius: '4px',
+                                    fontSize: '0.85rem',
+                                    color: '#bb86fc'
+                                }}>
+                                    {ent}
+                                </span>
+                            ))}
+                        </div>
+                    </div>
+                )}
               </div>
+
               <div className="clauses-section">
-                <h4>Clause Detection Summary</h4>
+                <h4>Risk Assessment</h4>
                 <ul>
                   {clauses.map((clause, index) => (
-                    <li key={index} className={clause.status}>
-                      {clause.status === 'detected' ? '✅' : clause.status === 'warning' ? '⚠️' : '❌'} {clause.name}
+                    <li key={index} className={clause.status} style={{ marginBottom: '1rem' }}>
+                      <div style={{ fontWeight: 'bold', marginBottom: '0.25rem' }}>
+                        {clause.status === 'detected' ? '✅' : clause.status === 'warning' ? '⚠️' : '❌'} {clause.name}
+                      </div>
+                      {clause.explanation && (
+                          <div style={{ fontSize: '0.85rem', color: '#b3b3b3', marginLeft: '1.5rem' }}>
+                              {clause.explanation}
+                          </div>
+                      )}
                     </li>
                   ))}
+                  {clauses.length === 0 && <li className="detected">No obvious risks detected.</li>}
                 </ul>
               </div>
             </div>
+            
             <div className="notarize-action">
               <h3>Create a Tamper-Proof Record</h3>
               <p>Store the document's unique hash on the Sepolia blockchain forever. This action will require a MetaMask transaction.</p>
