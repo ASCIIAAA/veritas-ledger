@@ -2,8 +2,9 @@ const express = require('express');
 const multer = require('multer');
 const pdf = require('pdf-parse');
 const cors = require('cors');
-const { spawn } = require('child_process'); // Import spawn
+const { spawn } = require('child_process'); 
 const path = require('path');
+const crypto = require('crypto'); 
 
 const app = express();
 app.use(cors());
@@ -13,66 +14,84 @@ app.post('/analyze', upload.single('pdf'), async (req, res) => {
     try {
         if (!req.file) return res.status(400).send("No file uploaded");
 
-        // 1. Parse PDF to Text
+        console.log("--- Processing File: " + req.file.originalname + " ---");
         const dataBuffer = req.file.buffer;
-        const pdfData = await pdf(dataBuffer);
-        const pdfText = pdfData.text;
-        const crypto = require('crypto');
+       
+        const pdfResult = await pdf(dataBuffer);
+        const pdfText = pdfResult.text; 
 
-        console.log("--- DEBUG: EXTRACTED TEXT ---");
-        console.log(pdfText.substring(0, 500)); // Print first 500 chars
-        console.log("-----------------------------");
+        console.log("--- DEBUG: EXTRACTED TEXT LENGTH: " + pdfText.length + " ---");
 
-        // 2. Call Python Script for NLP
-        // We pass the pdfText as a command line argument
         const pythonProcess = spawn('python', [
-            path.join(__dirname, 'ml_engine', 'analyzer.py'), 
-            pdfText
+            path.join(__dirname, 'ml_engine', 'analyzer.py')
         ]);
 
         let resultData = '';
         let errorData = '';
 
-        // Collect data from Python script
+        // Write text to Python's stdin
+        try {
+            pythonProcess.stdin.write(pdfText);
+            pythonProcess.stdin.end();
+        } catch (stdinErr) {
+            console.error("Stdin Error:", stdinErr);
+            return res.status(500).json({ error: "Failed to send data to analyzer" });
+        }
+
         pythonProcess.stdout.on('data', (data) => {
             resultData += data.toString();
         });
 
         pythonProcess.stderr.on('data', (data) => {
             errorData += data.toString();
+            console.error("Python Stderr:", data.toString()); 
         });
 
         pythonProcess.on('close', (code) => {
             if (code !== 0) {
-                console.error("Python Error:", errorData);
-                return res.status(500).json({ error: "Analysis failed" });
+                console.error("Python Process Exited with code:", code);
+                // Return error if no result data was captured
+                if (!resultData) {
+                     return res.status(500).json({ error: "Analysis failed", details: errorData });
+                }
             }
 
             try {
-                const analysisResult = JSON.parse(resultData);
+                // Find JSON in the output (clean up any potential prints)
+                const jsonStart = resultData.indexOf('{');
+                const jsonEnd = resultData.lastIndexOf('}');
                 
-                // --- NEW: Calculate Real SHA-256 Hash ---
+                if (jsonStart === -1 || jsonEnd === -1) {
+                    throw new Error("No JSON found in Python output");
+                }
+
+                const cleanResult = resultData.substring(jsonStart, jsonEnd + 1);
+                const analysisResult = JSON.parse(cleanResult);
+                
+                // Calculate Hash
                 const hashSum = crypto.createHash('sha256');
                 hashSum.update(req.file.buffer); 
                 const docHash = "0x" + hashSum.digest('hex');
-                // ----------------------------------------
 
                 res.json({
-                    docHash: docHash,           // The real hash for Blockchain
+                    docHash: docHash,           
                     score: analysisResult.score,
-                    type: analysisResult.type,   // The document type from Python
+                    type: analysisResult.type,   
                     risks: analysisResult.risks,
-                    entities: analysisResult.entities
+                    entities: analysisResult.entities,
+                    summary: analysisResult.summary, 
+                     missing_clauses: analysisResult.missing_clauses
                 });
 
             } catch (e) {
                 console.error("JSON Parse Error:", e);
+                console.error("Raw Output:", resultData);
                 res.status(500).send("Error parsing analysis results");
             }
         });
 
     } catch (error) {
-        console.error(error);
+        console.error("Server Error:", error);
         res.status(500).send("Error analyzing document");
     }
 });
